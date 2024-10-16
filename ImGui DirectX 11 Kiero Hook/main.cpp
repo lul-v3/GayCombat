@@ -175,7 +175,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
 	{
 
         // Create ImGui window for cheat settings
-        ImGui::Begin("GayCombat Menu", &menuOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+        ImGui::Begin("GoofyCombat Menu", &menuOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
         if (ImGui::BeginTabBar("Main"))
         {
@@ -186,13 +186,13 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
                 // Menu Infos Section
                 if (ImGui::CollapsingHeader("Menu Infos")) {
                     ImGui::TextWrapped(
-                        "Welcome to lulv3's GayCombat menu.\n"
+                        "Welcome to lulv3's GoofyCombat menu.\n"
                         "This menu is very basic and is far from finished.\n"
                         "If you come across errors or have other concerns about this mod menu, "
                         "you can create an 'issue' on Github.\n\n"
                         "Menu version: v0.2.0\n"
                         "Developer: lulv3\n"
-                        "Github: https://github.com/lulv3/GayCombat\n"
+                        "Github: https://github.com/lulv3/GoofyCombat\n"
                         "For more information and updates, visit the repository."
                     );
 

@@ -1,6 +1,6 @@
-# GayCombat Menu
+# GoofyCombat Menu
 
-Welcome to the **GayCombat Menu**, a very simple cheat menu for the game **Combat Master**. This project allows players to utilize cheats in a user-friendly graphical interface powered by ImGui.
+Welcome to the **GoofyCombat Menu**, a very simple cheat menu for the game **Combat Master**. This project allows players to utilize cheats in a user-friendly graphical interface powered by ImGui.
 
 ## Current "Features"
 
