@@ -1,4 +1,7 @@
 #include "includes.h"
+#include "mem.h"
+#include "cheats.h"
+#include "helper.h"
 
 // External declaration for ImGui window procedure handler
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -15,136 +18,123 @@ ID3D11Device* pDevice = NULL;
 ID3D11DeviceContext* pContext = NULL;
 ID3D11RenderTargetView* mainRenderTargetView;
 
-// Output file stream for debug logging
-std::ofstream debugLog("debug_log.txt");
+bool menuOpen = false;
 
-// Memory addresses for game values
-DWORD_PTR ammoAddress = 0x1D78C471230; // Address for ammo value
-DWORD_PTR magAddress = 0x1D78C4712D8; // Address for magazine value
-DWORD_PTR grenadeAddress = 0x1D78C471260; // Address for grenade value
 
-// Cheat settings flags
-bool unlimitedAmmo = false; // Flag for unlimited ammo
-bool unlimitedMag = false; // Flag for unlimited magazine
-bool unlimitedGrenade = false; // Flag for unlimited grenades
-
-// Function to write messages to the debug log
-void WriteToDebugLog(const std::string& message) {
-    if (debugLog.is_open()) {
-        debugLog << message << std::endl; // Write message to log file
-    }
-}
-
-// Function to close the debug log file
-void CloseDebugLog() {
-    if (debugLog.is_open()) {
-        debugLog.close(); // Close the log file if open
-    }
-}
-
-// Function to read a 4-byte integer value from the memory of a process
-int ReadInt(HANDLE hProcess, DWORD_PTR address) {
-    int value = 0; // Initialize to avoid random values
-    SIZE_T bytesRead = 0;
-    // Attempt to read the memory at the specified address
-    if (!ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(value), &bytesRead) || bytesRead != sizeof(value)) {
-        // Log error if reading fails
-        WriteToDebugLog("Failed to read memory at address: " + std::to_string(address) + " Error: " + std::to_string(GetLastError()));
-        return -1; // Return -1 in case of error
-    }
-    return value; // Return the read value
-}
-
-// Function to write a 4-byte integer value to the memory of a process
-void WriteInt(HANDLE hProcess, DWORD_PTR address, int value) {
-    SIZE_T bytesWritten = 0;
-    // Attempt to write the value to the specified address
-    if (!WriteProcessMemory(hProcess, (LPVOID)address, &value, sizeof(value), &bytesWritten) || bytesWritten != sizeof(value)) {
-        // Log error if writing fails
-        WriteToDebugLog("Failed to write memory at address: " + std::to_string(address) + " Error: " + std::to_string(GetLastError()));
-    }
-}
-
-// Function to find the process ID of "CombatMaster.exe"
-DWORD FindProcessId(const std::string& processName) {
-    DWORD processIds[1024], processesCount;
-    // Enumerate the processes currently running
-    if (!EnumProcesses(processIds, sizeof(processIds), &processesCount)) {
-        WriteToDebugLog("Failed to enumerate processes.");
-        return 0; // Return 0 if enumeration fails
-    }
-
-    processesCount /= sizeof(DWORD); // Calculate the number of processes
-
-    // Loop through all process IDs
-    for (unsigned int i = 0; i < processesCount; i++) {
-        // Open the process to query information
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processIds[i]);
-        if (hProcess) {
-            char processNameBuffer[MAX_PATH];
-            // Get the executable name of the process
-            if (GetModuleFileNameEx(hProcess, NULL, processNameBuffer, sizeof(processNameBuffer) / sizeof(char))) {
-                // Compare the name with the target process name
-                if (strstr(processNameBuffer, processName.c_str()) != NULL) {
-                    CloseHandle(hProcess); // Close the handle to the process
-                    return processIds[i]; // Return the found process ID
-                }
-            }
-            CloseHandle(hProcess); // Close the handle if not matching
-        }
-    }
-    return 0; // Return 0 if the PID is not found
-}
-
-// Function to handle cheat codes for the game
-void HandleCheatCode() {
-    DWORD processId = FindProcessId("CombatMaster.exe"); // Find the PID of CombatMaster.exe
+// Function to handle cheatmenu logic
+void CheatMenuLogic()
+{
+    DWORD processId = helper::FindProcessId("CombatMaster.exe");    // Find the PID of CombatMaster.exe
     if (processId == 0) {
-        WriteToDebugLog("CombatMaster.exe not found."); // Log if the process is not found
+        std::cout << "CombatMaster.exe not found.";                 // Log if the process is not found
         return;
     }
 
     // Open the target process with required permissions
     HANDLE hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, processId);
     if (hProcess == NULL) {
-        WriteToDebugLog("Failed to open process: " + std::to_string(GetLastError())); // Log if opening fails
+        std::cout << "Failed to open process: " + std::to_string(GetLastError()); // Log if opening fails
         return;
     }
 
-    // Handle unlimited ammo setting
-    if (unlimitedAmmo) {
-        int currentAmmo = ReadInt(hProcess, ammoAddress); // Read current ammo
-        WriteToDebugLog("Current Ammo: " + std::to_string(currentAmmo)); // Log current ammo
-        WriteToDebugLog("Setting Ammo to 150."); // Log the action
-        WriteInt(hProcess, ammoAddress, 150); // Set ammo to 150
-    }
-
-    // Handle unlimited magazine setting
-    if (unlimitedMag) {
-        WriteToDebugLog("Setting Magazine to 150."); // Log the action
-        WriteInt(hProcess, magAddress, 150); // Set magazine to 150
-    }
-
-    // Handle unlimited grenade setting
-    if (unlimitedGrenade) {
-        WriteToDebugLog("Setting Grenade to 2."); // Log the action
-        WriteInt(hProcess, grenadeAddress, 2); // Set grenades to 2
-    }
-
-    CloseHandle(hProcess); // Close the handle to the process
+    HandleCheats(hProcess);
 }
 
 // Function to initialize ImGui context and settings
 void InitImGui() {
-    ImGui::CreateContext(); // Create a new ImGui context
-    ImGuiIO& io = ImGui::GetIO(); // Get the IO structure for ImGui
-    io.ConfigFlags = ImGuiConfigFlags_NoMouseCursorChange; // Configure ImGui settings
-    ImGui_ImplWin32_Init(window); // Initialize ImGui for Windows
-    ImGui_ImplDX11_Init(pDevice, pContext); // Initialize ImGui for DirectX 11
+    ImGui::CreateContext();                                 // Create a new ImGui context
+    ImGuiIO& io = ImGui::GetIO();                           // Get the IO structure for ImGui
+    io.ConfigFlags = ImGuiConfigFlags_NoMouseCursorChange;  // Configure ImGui settings
+    ImGui_ImplWin32_Init(window);                           // Initialize ImGui for Windows
+    ImGui_ImplDX11_Init(pDevice, pContext);                 // Initialize ImGui for DirectX 11
+
+	// Purple Comfy style by RegularLunar from ImThemes
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	style.Alpha = 1.0f;
+	style.WindowPadding = ImVec2(8.0f, 8.0f);
+	style.WindowRounding = 10.0f;
+	style.WindowBorderSize = 0.0f;
+	style.WindowMinSize = ImVec2(30.0f, 30.0f);
+	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+	style.WindowMenuButtonPosition = ImGuiDir_Right;
+	style.ChildRounding = 5.0f;
+	style.ChildBorderSize = 1.0f;
+	style.PopupRounding = 10.0f;
+	style.PopupBorderSize = 0.0f;
+	style.FramePadding = ImVec2(5.0f, 3.5f);
+	style.FrameRounding = 5.0f;
+	style.FrameBorderSize = 0.0f;
+	style.ItemSpacing = ImVec2(5.0f, 4.0f);
+	style.ItemInnerSpacing = ImVec2(5.0f, 5.0f);
+	style.IndentSpacing = 5.0f;
+	style.ColumnsMinSpacing = 5.0f;
+	style.ScrollbarSize = 15.0f;
+	style.ScrollbarRounding = 9.0f;
+	style.GrabMinSize = 15.0f;
+	style.GrabRounding = 5.0f;
+	style.TabRounding = 5.0f;
+	style.TabBorderSize = 0.0f;
+	style.ColorButtonPosition = ImGuiDir_Right;
+	style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+	style.SelectableTextAlign = ImVec2(0.0f, 0.0f);
+
+	style.Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+	style.Colors[ImGuiCol_TextDisabled] = ImVec4(1.0f, 1.0f, 1.0f, 0.3605149984359741f);
+	style.Colors[ImGuiCol_WindowBg] = ImVec4(0.09803921729326248f, 0.09803921729326248f, 0.09803921729326248f, 1.0f);
+	style.Colors[ImGuiCol_ChildBg] = ImVec4(1.0f, 0.0f, 0.0f, 0.0f);
+	style.Colors[ImGuiCol_PopupBg] = ImVec4(0.09803921729326248f, 0.09803921729326248f, 0.09803921729326248f, 1.0f);
+	style.Colors[ImGuiCol_Border] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	style.Colors[ImGuiCol_FrameBg] = ImVec4(0.1568627506494522f, 0.1568627506494522f, 0.1568627506494522f, 1.0f);
+	style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.3803921639919281f, 0.4235294163227081f, 0.572549045085907f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_TitleBg] = ImVec4(0.09803921729326248f, 0.09803921729326248f, 0.09803921729326248f, 1.0f);
+	style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.09803921729326248f, 0.09803921729326248f, 0.09803921729326248f, 1.0f);
+	style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.2588235437870026f, 0.2588235437870026f, 0.2588235437870026f, 0.0f);
+	style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.1568627506494522f, 0.1568627506494522f, 0.1568627506494522f, 0.0f);
+	style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.1568627506494522f, 0.1568627506494522f, 0.1568627506494522f, 1.0f);
+	style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.2352941185235977f, 0.2352941185235977f, 0.2352941185235977f, 1.0f);
+	style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.294117659330368f, 0.294117659330368f, 0.294117659330368f, 1.0f);
+	style.Colors[ImGuiCol_CheckMark] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_Button] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_Header] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_Separator] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_SeparatorHovered] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_SeparatorActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_ResizeGrip] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_ResizeGripActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_Tab] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_TabHovered] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_TabActive] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_TabUnfocused] = ImVec4(0.0f, 0.4509803950786591f, 1.0f, 0.0f);
+	style.Colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.1333333402872086f, 0.2588235437870026f, 0.4235294163227081f, 0.0f);
+	style.Colors[ImGuiCol_PlotLines] = ImVec4(0.294117659330368f, 0.294117659330368f, 0.294117659330368f, 1.0f);
+	style.Colors[ImGuiCol_PlotLinesHovered] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.7372549176216125f, 0.6941176652908325f, 0.886274516582489f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.501960813999176f, 0.3019607961177826f, 1.0f, 0.5490196347236633f);
+	style.Colors[ImGuiCol_DragDropTarget] = ImVec4(1.0f, 1.0f, 0.0f, 0.8999999761581421f);
+	style.Colors[ImGuiCol_NavHighlight] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+	style.Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.699999988079071f);
+	style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.800000011920929f, 0.800000011920929f, 0.800000011920929f, 0.2000000029802322f);
+	style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.800000011920929f, 0.800000011920929f, 0.800000011920929f, 0.3499999940395355f);
 }
 
 // Window procedure function to handle messages for the ImGui window
 LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+
+    if (uMsg == WM_KEYDOWN && wParam == VK_INSERT)
+        menuOpen = !menuOpen;
+
     if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam))
         return true; // Return if ImGui handled the message
 
@@ -159,45 +149,107 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     if (!init) {
         // If not initialized, attempt to initialize the Direct3D device
         if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D11Device), (void**)&pDevice))) {
-            pDevice->GetImmediateContext(&pContext); // Get the immediate device context
+            pDevice->GetImmediateContext(&pContext);                                        // Get the immediate device context
             DXGI_SWAP_CHAIN_DESC sd;
-            pSwapChain->GetDesc(&sd); // Get swap chain description
-            window = sd.OutputWindow; // Store the output window handle
+            pSwapChain->GetDesc(&sd);                                                       // Get swap chain description
+            window = sd.OutputWindow;                                                       // Store the output window handle
             ID3D11Texture2D* pBackBuffer;
-            pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer); // Get the back buffer
-            pDevice->CreateRenderTargetView(pBackBuffer, NULL, &mainRenderTargetView); // Create a render target view
-            pBackBuffer->Release(); // Release the back buffer
-            oWndProc = (WNDPROC)SetWindowLongPtr(window, GWLP_WNDPROC, (LONG_PTR)WndProc); // Set the new window procedure
-            InitImGui(); // Initialize ImGui
-            init = true; // Set the initialized flag
+            pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);     // Get the back buffer
+            pDevice->CreateRenderTargetView(pBackBuffer, NULL, &mainRenderTargetView);      // Create a render target view
+            pBackBuffer->Release();                                                         // Release the back buffer
+            oWndProc = (WNDPROC)SetWindowLongPtr(window, GWLP_WNDPROC, (LONG_PTR)WndProc);  // Set the new window procedure
+            InitImGui();                                                                    // Initialize ImGui
+            init = true;                                                                    // Set the initialized flag
         }
         else {
-            return oPresent(pSwapChain, SyncInterval, Flags); // Call the original present function if initialization fails
+            return oPresent(pSwapChain, SyncInterval, Flags);                               // Call the original present function if initialization fails
         }
     }
 
     // Start a new ImGui frame
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
-    ImGui::NewFrame(); // Begin a new ImGui frame
-    ImGui::SetNextWindowSize(ImVec2(400, 500)); // Set the size of the ImGui window
+    ImGui::NewFrame();                          // Begin a new ImGui frame
+    ImGui::SetNextWindowSize(ImVec2(700, 450)); // Set the size of the ImGui window
+	if (menuOpen)
+	{
 
-    // Create ImGui window for cheat settings
-    ImGui::Begin("GayCombat V.0.1");
-    ImGui::Checkbox("Unlimited Ammo", &unlimitedAmmo); // Checkbox for unlimited ammo
-    ImGui::NewLine(); // New line
-    ImGui::Checkbox("Unlimited Mag", &unlimitedMag); // Checkbox for unlimited magazine
-    ImGui::NewLine(); // New line
-    ImGui::Checkbox("Unlimited Grenade", &unlimitedGrenade); // Checkbox for unlimited grenades
-    ImGui::End(); // End ImGui window
+        // Create ImGui window for cheat settings
+        ImGui::Begin("GayCombat Menu", &menuOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+
+        if (ImGui::BeginTabBar("Main"))
+        {
+            if (ImGui::BeginTabItem("Home"))
+            {
+                ImGui::Text("Please read!");
+
+                // Menu Infos Section
+                if (ImGui::CollapsingHeader("Menu Infos")) {
+                    ImGui::TextWrapped(
+                        "Welcome to lulv3's GayCombat menu.\n"
+                        "This menu is very basic and is far from finished.\n"
+                        "If you come across errors or have other concerns about this mod menu, "
+                        "you can create an 'issue' on Github.\n\n"
+                        "Menu version: v0.2.0\n"
+                        "Developer: lulv3\n"
+                        "Github: https://github.com/lulv3/GayCombat\n"
+                        "For more information and updates, visit the repository."
+                    );
+
+                    // Füge mehr Informationen oder Optionen hinzu
+                    ImGui::Separator();
+                    ImGui::Text("Additional Info:");
+                    ImGui::BulletText("Missing features:");
+                    ImGui::BulletText("- Aimbot and ESP enhancements");
+                    ImGui::BulletText("- Customizable key bindings");
+                    ImGui::BulletText("- Performance optimizations");
+                    ImGui::BulletText("- Bug fixes and stability improvements");
+                }
+
+                // Disclaimer Section
+                if (ImGui::CollapsingHeader("Disclaimer")) {
+                    ImGui::TextWrapped(
+                        "Disclaimer: By using this mod menu, you acknowledge the following:\n\n"
+                        "1. This software is provided 'as is', without warranty of any kind.\n"
+                        "2. You are solely responsible for any actions taken with this software.\n"
+                        "3. The developer is not liable for any damages, including bans or legal issues.\n\n"
+                        "Use this mod at your own risk. Cheating in online games may result in a ban or other consequences."
+                    );
+
+                    // Hinzufügung einer Checkbox für die Zustimmung zum Disclaimer
+                    ImGui::Text("By using the menu you agree to the terms of use!");
+                }
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Equip"))
+            {
+                if (ImGui::CollapsingHeader("Primary")) {
+                    ImGui::Checkbox("Unlimited Ammo", &unlimitedPrimaryAmmo);   // Checkbox for unlimited ammo
+                }
+                ImGui::Separator();
+                if (ImGui::CollapsingHeader("Secondary")) {
+                    ImGui::Checkbox("Unlimited Ammo", &unlimitedSecondaryAmmo); // Checkbox for unlimited ammo
+                }
+                ImGui::Separator();
+                ImGui::Checkbox("Unlimited Grenade", &unlimitedGrenade);        // Checkbox for unlimited grenades
+
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+
+        ImGui::End(); // End ImGui window
+	}
     ImGui::Render(); // Render the ImGui frame
 
-    // Handle cheat codes such as unlimited ammo, magazines, and grenades
-    HandleCheatCode();
+	// Handle cheat menu logic
+	CheatMenuLogic(); 
 
-    pContext->OMSetRenderTargets(1, &mainRenderTargetView, NULL); // Set the render target
-    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData()); // Render ImGui draw data
-    return oPresent(pSwapChain, SyncInterval, Flags); // Call the original present function
+    pContext->OMSetRenderTargets(1, &mainRenderTargetView, NULL);   // Set the render target
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());            // Render ImGui draw data
+    return oPresent(pSwapChain, SyncInterval, Flags);               // Call the original present function
 }
 
 // Main thread function for initializing the hook
@@ -206,11 +258,11 @@ DWORD WINAPI MainThread(LPVOID lpReserved) {
     do {
         // Attempt to initialize the kiero library for Direct3D
         if (kiero::init(kiero::RenderType::D3D11) == kiero::Status::Success) {
-            kiero::bind(8, (void**)&oPresent, hkPresent); // Bind the present function to the hook
-            init_hook = true; // Set hook initialized flag
+            kiero::bind(8, (void**)&oPresent, hkPresent);                       // Bind the present function to the hook
+            init_hook = true;                                                   // Set hook initialized flag
         }
-    } while (!init_hook); // Loop until initialization is successful
-    return TRUE; // Return TRUE upon completion
+    } while (!init_hook);                                                       // Loop until initialization is successful
+    return TRUE;                                                                // Return TRUE upon completion
 }
 
 // Function to attach a console for debugging
@@ -226,14 +278,13 @@ void AttachConsole() {
 BOOL WINAPI DllMain(HMODULE hMod, DWORD dwReason, LPVOID lpReserved) {
     switch (dwReason) {
     case DLL_PROCESS_ATTACH:
-        DisableThreadLibraryCalls(hMod); // Disable thread notifications for the DLL
-        AttachConsole(); // Attach console for debugging
+        DisableThreadLibraryCalls(hMod);                        // Disable thread notifications for the DLL
+        // AttachConsole();                                     // Attach console for debugging
         CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr); // Create a new thread for the main hook
         break;
     case DLL_PROCESS_DETACH:
-        CloseDebugLog(); // Close the debug log file
-        kiero::shutdown(); // Shut down the kiero library
+        kiero::shutdown();                                      // Shut down the kiero library
         break;
     }
-    return TRUE; // Return TRUE for successful DLL entry
+    return TRUE;                                                // Return TRUE for successful DLL entry
 }
